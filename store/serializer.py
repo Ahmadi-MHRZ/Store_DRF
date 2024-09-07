@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from decimal import Decimal
-from .models import Product, Category, Comment
+from .models import Product, Category, Comment, Cart, CartItem
 from django.utils.text import slugify
 
 
@@ -66,3 +66,63 @@ class CommentSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         product_id = self.context['product_pk']
         return Comment.objects.create(product_id=product_id, **validated_data)
+
+
+class CaretProductSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = Product
+        fields = ['id', 'name', 'unit_price']
+
+
+class UpdateCartItemSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CartItem
+        fields = ['quantity']
+
+
+class AddCartItemSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CartItem
+        fields = ['id', 'product', 'quantity']
+
+    def create(self, validated_data):
+        product = validated_data.get('product')
+        quantity = validated_data.get('quantity')
+        cart_pk = self.context['cart_pk']
+        try:
+            cart_item = CartItem.objects.get(cart_id=cart_pk, product_id=product.id)
+            cart_item.quantity += quantity
+            cart_item.save()
+        except CartItem.DoesNotExist:
+            cart_item = CartItem.objects.create(cart_id=cart_pk, **validated_data)
+        self.instance = cart_item
+        return cart_item
+
+
+class CartItemSerializer(serializers.ModelSerializer):
+    product = CaretProductSerializer()
+    item_total = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CartItem
+        fields = ['id', 'product', 'quantity', 'item_total']
+
+    def get_item_total(self, cart_item):
+        return cart_item.quantity * cart_item.product.unit_price
+
+
+
+class CartSerializer(serializers.ModelSerializer):
+    items = CartItemSerializer(many=True, read_only=True)
+    total_price = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Cart
+        fields = ['id', 'items', 'total_price']
+        read_only_fields = ['id']
+
+    def get_total_price(self, cart):
+        return sum([item.quantity * item.product.unit_price for item in cart.items.all()])
+
+

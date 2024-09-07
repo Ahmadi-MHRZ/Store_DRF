@@ -1,10 +1,11 @@
 from rest_framework.generics import ListCreateAPIView, RetrieveUpdateDestroyAPIView
 from django.shortcuts import get_object_or_404
-from .models import Product, Category, Comment
+from .models import Product, Category, Comment, Cart, CartItem
 from django.db.models import Count
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
-from .serializer import ProductSerializer, CategorySerializer, CommentSerializer
+from .serializer import ProductSerializer, CartSerializer, CategorySerializer, CommentSerializer, CartItemSerializer, \
+    AddCartItemSerializer, UpdateCartItemSerializer
 from rest_framework import status
 from rest_framework.viewsets import ModelViewSet
 from django_filters.rest_framework import DjangoFilterBackend
@@ -12,6 +13,8 @@ from .filter import ProductFilter
 from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.pagination import PageNumberPagination
 from .paginations import DefaultPagination
+from rest_framework.viewsets import GenericViewSet
+from rest_framework.mixins import CreateModelMixin, DestroyModelMixin, RetrieveModelMixin
 
 
 class ProductViewSet(ModelViewSet):
@@ -27,10 +30,7 @@ class ProductViewSet(ModelViewSet):
     def get_serializer_context(self):
         return {'request': self.request}
 
-
-
-
-    #fiter by input in URLs
+    # fiter by input in URLs
     # def get_queryset(self):
     #     queryset = Product.objects.select_related('category').annotate(comments_count=Count('comments')).all()
     #     category_id_params = self.request.query_params.get('category_id')
@@ -71,4 +71,27 @@ class CommentViewSet(ModelViewSet):
         return {'product_pk': self.kwargs['product_pk']}
 
 
+class CartViewSet(CreateModelMixin,
+                  RetrieveModelMixin,
+                  DestroyModelMixin,
+                  GenericViewSet):
+    serializer_class = CartSerializer
+    queryset = Cart.objects.prefetch_related('items__product')
+    lookup_value_regex = '[0-9a-fA-F]{8}\-?[0-9a-fA-F]{4}\-?[0-9a-fA-F]{4}\-?[0-9a-fA-F]{4}\-?[0-9a-fA-F]{12}'
 
+
+class CartItemsViewSet(ModelViewSet):
+    http_method_names = ['get', 'post', 'patch', 'delete']
+    def get_serializer_class(self):
+        if self.request.method == 'POST':
+            return AddCartItemSerializer
+        if self.request.method == 'PATCH':
+            return UpdateCartItemSerializer
+        return CartItemSerializer
+
+    def get_queryset(self):
+        cart_pk = self.kwargs['cart_pk']
+        return CartItem.objects.select_related('product').filter(cart_id=cart_pk).all()
+
+    def get_serializer_context(self):
+        return {'cart_pk': self.kwargs['cart_pk']}
