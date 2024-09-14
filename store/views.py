@@ -1,11 +1,11 @@
 from rest_framework.generics import ListCreateAPIView, RetrieveUpdateDestroyAPIView
 from django.shortcuts import get_object_or_404
-from .models import Product, Category, Comment, Cart, CartItem
-from django.db.models import Count
+from .models import Product, Category, Comment, Cart, CartItem, Customer, Order, OrderItem
+from django.db.models import Count, Prefetch
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from .serializer import ProductSerializer, CartSerializer, CategorySerializer, CommentSerializer, CartItemSerializer, \
-    AddCartItemSerializer, UpdateCartItemSerializer
+    AddCartItemSerializer, UpdateCartItemSerializer, CustomerSerializer, OrderSerializer
 from rest_framework import status
 from rest_framework.viewsets import ModelViewSet
 from django_filters.rest_framework import DjangoFilterBackend
@@ -15,17 +15,21 @@ from rest_framework.pagination import PageNumberPagination
 from .paginations import DefaultPagination
 from rest_framework.viewsets import GenericViewSet
 from rest_framework.mixins import CreateModelMixin, DestroyModelMixin, RetrieveModelMixin
+from rest_framework.decorators import action
+from rest_framework.permissions import IsAuthenticated, IsAdminUser
+from .permissions import IsStaffOrReadOnly, SendPrivetEmail, CustomDjangoPermission
 
 
 class ProductViewSet(ModelViewSet):
     serializer_class = ProductSerializer
-    queryset = Product.objects.select_related('category').annotate(comments_count=Count('comments'))
+    queryset = Product.objects.select_related('category').annotate(comments_count=Count('comments')).order_by('id')
     filter_backends = [DjangoFilterBackend, OrderingFilter, SearchFilter]
     search_fields = ['name', 'category__title']
     ordering_fields = ['name', 'unit_price', 'inventory']
     # filterset_fields = ['category_id', 'inventory']
     filterset_class = ProductFilter
     pagination_class = DefaultPagination
+    permission_classes = [IsStaffOrReadOnly]
 
     def get_serializer_context(self):
         return {'request': self.request}
@@ -50,6 +54,7 @@ class ProductViewSet(ModelViewSet):
 class CategoryViewSet(ModelViewSet):
     serializer_class = CategorySerializer
     queryset = Category.objects.annotate(products_count=Count('products'))
+    permission_classes = [IsStaffOrReadOnly]
 
     def destroy(self, request, pk):
         category = get_object_or_404(Category.objects.annotate(products_count=Count('products')), pk=pk)
@@ -95,3 +100,34 @@ class CartItemsViewSet(ModelViewSet):
 
     def get_serializer_context(self):
         return {'cart_pk': self.kwargs['cart_pk']}
+
+
+class CustomerViewSet(ModelViewSet):
+    serializer_class = CustomerSerializer
+    queryset = Customer.objects.all()
+    permission_classes = [IsAdminUser]
+
+    @action(detail=False, methods=['PUT', 'GET'], permission_classes=[IsAuthenticated])
+    def me(self, request):
+        user_id = request.user.id
+        customer = Customer.objects.get(user_id=user_id)
+        if request.method == 'GET':
+            serializer = CustomerSerializer(customer)
+            return Response(serializer.data)
+        elif request.method == 'PUT':
+            serializer = CustomerSerializer(customer, data=request.data)
+            serializer.is_valid(raise_exception=True)
+            serializer.save()
+            return Response(serializer.data)
+
+    @action(detail=True, permission_classes=[SendPrivetEmail])
+    def privet_email(self, request, pk):
+        return Response(f'sending email to customer:{pk}')
+
+
+class OrderViewSet(ModelViewSet):
+    serializer_class = OrderSerializer
+    queryset = Order.objects.prefetch_related(
+        Prefetch(
+            'items', queryset=OrderItem.objects.select_related('product'))).all()
+
