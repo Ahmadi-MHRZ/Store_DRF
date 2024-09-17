@@ -136,7 +136,7 @@ class CustomerSerializer(serializers.ModelSerializer):
 class OrderItemProductSerializer(serializers.ModelSerializer):
     class Meta:
         model = Product
-        fields = ['id', 'unit_price', 'name']
+        fields = ['id', 'name', 'unit_price']
 
 
 class OrderItemsSerializer(serializers.ModelSerializer):
@@ -144,7 +144,17 @@ class OrderItemsSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = OrderItem
-        fields = ['order', 'product', 'quantity', 'unit_price']
+        fields = ['id', 'order', 'product', 'quantity', 'unit_price']
+
+
+class OrderCustomerSerializer(serializers.ModelSerializer):
+    first_name = serializers.CharField(max_length=255, source='user.first_name')
+    last_name = serializers.CharField(max_length=255, source='user.last_name')
+    email = serializers.EmailField(source='user.email')
+
+    class Meta:
+        model = Customer
+        fields = ['id', 'first_name', 'last_name', 'email', 'birth_date']
 
 
 class OrderSerializer(serializers.ModelSerializer):
@@ -152,5 +162,52 @@ class OrderSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Order
-        fields = ['id', 'customer_id', 'status', 'datetime_created', 'items']
+        fields = ['id', 'status', 'datetime_created', 'items']
+
+
+class OrderAdminSerializer(serializers.ModelSerializer):
+    items = OrderItemsSerializer(many=True)
+    customer = OrderCustomerSerializer()
+
+    class Meta:
+        model = Order
+        fields = ['id', 'customer', 'status', 'datetime_created', 'items']
+
+
+class OrderCreateSerializer(serializers.Serializer):
+    cart_id = serializers.UUIDField()
+
+    def validated_cart_data(self, cart_id):
+        try:
+            if Cart.objects.prefetch_related('items').get(id=cart_id).items.count() == 0:
+                raise serializers.ValidationError('Your cart is empty. please add at least one item yo your cart')
+        except Cart.DoesNotExist:
+            raise serializers.ValidationError('There is no such a cart')
+
+    def save(self, **kwargs):
+        cart_id = self.validated_data['cart_id']
+        user_id = self.context['user_id']
+        customer = Customer.objects.get(user_id=user_id)
+
+        order = Order()
+        order.customer = customer
+        order.save()
+
+        cart_items = CartItem.objects.select_related('product').filter(cart_id=cart_id)
+
+        order_items = list()
+        for cart_item in cart_items:
+            order_item = OrderItem()
+            order_item.order = order
+            order_item.product_id = cart_item.product_id
+            order_item.unit_price = cart_item.product.unit_price
+            order_item.quantity = cart_item.quantity
+
+            order_items.append(order_item)
+
+        OrderItem.objects.bulk_create(order_items)
+        Cart.objects.get(id=cart_id).delete()
+        return order
+
+
 

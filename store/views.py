@@ -5,7 +5,8 @@ from django.db.models import Count, Prefetch
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from .serializer import ProductSerializer, CartSerializer, CategorySerializer, CommentSerializer, CartItemSerializer, \
-    AddCartItemSerializer, UpdateCartItemSerializer, CustomerSerializer, OrderSerializer
+    AddCartItemSerializer, UpdateCartItemSerializer, CustomerSerializer, OrderSerializer, OrderItemsSerializer, \
+    OrderAdminSerializer, OrderCreateSerializer
 from rest_framework import status
 from rest_framework.viewsets import ModelViewSet
 from django_filters.rest_framework import DjangoFilterBackend
@@ -126,8 +127,32 @@ class CustomerViewSet(ModelViewSet):
 
 
 class OrderViewSet(ModelViewSet):
-    serializer_class = OrderSerializer
-    queryset = Order.objects.prefetch_related(
-        Prefetch(
-            'items', queryset=OrderItem.objects.select_related('product'))).all()
+    permission_classes = [IsAuthenticated]
+
+    def get_serializer_class(self):
+        if self.request.method == 'POST':
+            return OrderCreateSerializer
+
+        if self.request.user.is_staff:
+            return OrderAdminSerializer
+        return OrderSerializer
+
+    def get_queryset(self):
+        queryset = Order.objects.prefetch_related(
+            Prefetch(
+                'items', queryset=OrderItem.objects.select_related('product'))).select_related('customer__user').all()
+        user = self.request.user
+        if user.is_staff:
+            return queryset
+        return queryset.filter(customer__user_id=user.id)
+
+    def get_serializer_context(self):
+        return {'user_id': self.request.user.id}
+
+
+class OrderItemViewSet(ModelViewSet):
+    serializer_class = OrderItemsSerializer
+    def get_queryset(self):
+        order_pk = self.kwargs['order_pk']
+        return OrderItem.objects.select_related('product').filter(order_id=order_pk)
 

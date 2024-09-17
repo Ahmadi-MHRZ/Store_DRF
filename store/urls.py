@@ -18,12 +18,14 @@ products_router.register('comments', views.CommentViewSet, basename='product-com
 cart_router = routers.NestedDefaultRouter(router, 'carts', lookup='cart')
 cart_router.register('items', views.CartItemsViewSet, basename='cartItem_items')
 
-# order_router = routers.NestedDefaultRouter(router, 'orders', lookup='order')
+order_router = routers.NestedDefaultRouter(router, 'orders', lookup='order')
+order_router.register('items', views.OrderItemViewSet, basename='orderItem-items')
 
 urlpatterns = [
     path('', include(router.urls)),    #urlpatterns=router.urls
     path('', include(products_router.urls)),
     path('', include(cart_router.urls)),
+    path('', include(order_router.urls)),
 
 ]
 
