@@ -19,6 +19,7 @@ from rest_framework.mixins import CreateModelMixin, DestroyModelMixin, RetrieveM
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from .permissions import IsStaffOrReadOnly, SendPrivetEmail, CustomDjangoPermission
+from .signals import order_created
 
 
 class ProductViewSet(ModelViewSet):
@@ -163,6 +164,9 @@ class OrderViewSet(ModelViewSet):
             context={'user_id': self.request.user.id})
         create_order_serializer.is_valid(raise_exception=True)
         created_order = create_order_serializer.save()
+
+        order_created.send_rebust(self.__class__, order=created_order)
+
         serializer = OrderSerializer(created_order)
         return Response(serializer.data)
 
